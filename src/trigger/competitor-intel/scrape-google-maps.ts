@@ -94,7 +94,17 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   }
 
   const body = await res.json() as { data?: OutscraperResult[][] };
-  return body.data?.flat() ?? [];
+  const flat = body.data?.flat() ?? [];
+  if (flat.length > 0) {
+    const sample = flat[0] as Record<string, unknown>;
+    const relevant = Object.fromEntries(
+      Object.entries(sample).filter(([k]) =>
+        ["site", "website", "Instagram", "Facebook", "instagram", "facebook", "social_links", "domain"].includes(k)
+      )
+    );
+    console.log("Outscraper social fields sample:", JSON.stringify(relevant));
+  }
+  return flat;
 }
 
 async function pollOutscraperResults(apiKey: string, resultsUrl: string): Promise<OutscraperResult[]> {
