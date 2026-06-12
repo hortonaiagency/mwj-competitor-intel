@@ -2,5 +2,6 @@
 node_modules/
 dist/
 .tmp/
+.trigger/
 *-service-account*.json
 *.local
