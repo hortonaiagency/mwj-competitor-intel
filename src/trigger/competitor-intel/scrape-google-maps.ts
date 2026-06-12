@@ -75,7 +75,6 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   url.searchParams.set("query", query);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("async", "false");
-  url.searchParams.set("fields", "name,full_address,phone,site,rating,reviews,postal_code,type,social_links");
 
   const res = await fetch(url.toString(), {
     headers: { "X-API-KEY": apiKey },
@@ -94,12 +93,7 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   }
 
   const body = await res.json() as { data?: OutscraperResult[][] };
-  const results = body.data?.flat() ?? [];
-  if (results.length > 0) {
-    console.log("Outscraper raw sample (first result keys):", JSON.stringify(Object.keys(results[0])));
-    console.log("Outscraper raw sample (first result):", JSON.stringify(results[0]));
-  }
-  return results;
+  return body.data?.flat() ?? [];
 }
 
 async function pollOutscraperResults(apiKey: string, resultsUrl: string): Promise<OutscraperResult[]> {
