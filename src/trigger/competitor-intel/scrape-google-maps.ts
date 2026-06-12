@@ -75,6 +75,7 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   url.searchParams.set("query", query);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("async", "false");
+  url.searchParams.set("domains_service", "true"); // enables Emails & Contacts enrichment: adds Facebook, Instagram, website
 
   const res = await fetch(url.toString(), {
     headers: { "X-API-KEY": apiKey },
