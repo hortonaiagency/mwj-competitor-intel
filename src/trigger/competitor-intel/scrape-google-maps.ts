@@ -75,7 +75,6 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   url.searchParams.set("query", query);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("async", "false");
-  url.searchParams.set("domains_service", "true"); // enables Emails & Contacts enrichment: adds Facebook, Instagram, website
 
   const res = await fetch(url.toString(), {
     headers: { "X-API-KEY": apiKey },
@@ -94,17 +93,7 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   }
 
   const body = await res.json() as { data?: OutscraperResult[][] };
-  const flat = body.data?.flat() ?? [];
-  if (flat.length > 0) {
-    const sample = flat[0] as Record<string, unknown>;
-    const relevant = Object.fromEntries(
-      Object.entries(sample).filter(([k]) =>
-        ["site", "website", "Instagram", "Facebook", "instagram", "facebook", "social_links", "domain"].includes(k)
-      )
-    );
-    console.log("Outscraper social fields sample:", JSON.stringify(relevant));
-  }
-  return flat;
+  return body.data?.flat() ?? [];
 }
 
 async function pollOutscraperResults(apiKey: string, resultsUrl: string): Promise<OutscraperResult[]> {
