@@ -17,6 +17,14 @@ export const checkCompetitors = schedules.task({
     timezone: "America/New_York",
   },
   run: async () => {
+    // Kill switch: scheduled runs do nothing (and cost nothing) unless
+    // AUTOMATION_ENABLED=true is set in the environment. Flip it in the
+    // Trigger.dev dashboard to activate — no redeploy needed.
+    if (process.env.AUTOMATION_ENABLED !== "true") {
+      console.log("AUTOMATION_ENABLED is not 'true' — skipping run (no API calls made)");
+      return { status: "PAUSED" };
+    }
+
     const scanMode = process.env.SCAN_MODE ?? "demo";
     const runDate = new Date().toISOString().split("T")[0];
 
