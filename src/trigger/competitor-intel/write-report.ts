@@ -168,7 +168,7 @@ function buildSheetRow(place: DiffedCompetitorPlace, runDate: string): string[] 
     runDate, // B: Last Seen
     place.name, // C
     place.address, // D
-    place.phone ?? "", // E
+    place.phone ? `'${place.phone}` : "", // E — leading ' forces Sheets to treat as plain text
     place.website ?? "", // F
     place.instagramHandle ?? "", // G
     place.facebookUrl ?? "", // H
