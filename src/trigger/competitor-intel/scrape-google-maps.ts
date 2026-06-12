@@ -117,27 +117,27 @@ function normalizePlace(item: OutscraperResult): CompetitorPlace {
   let facebookUrl: string | null = null;
 
   const site = item.site ?? item.website ?? "";
-  const socialLinks: string[] = item.social_links ?? [];
 
-  // Check direct social fields first
-  if (item.instagram) {
-    const match = item.instagram.match(/instagram\.com\/([^/?#]+)/);
-    instagramHandle = match ? match[1] : item.instagram.replace(/^@/, "");
+  // Check Outscraper enrichment fields (capitalized) and lowercase variants
+  const igRaw = item.Instagram ?? item.instagram ?? "";
+  const fbRaw = item.Facebook ?? item.facebook ?? "";
+
+  if (igRaw) {
+    const match = igRaw.match(/instagram\.com\/([^/?#]+)/);
+    instagramHandle = match ? match[1] : igRaw.replace(/^@/, "") || null;
   }
-  if (item.facebook) facebookUrl = item.facebook;
+  if (fbRaw) facebookUrl = fbRaw;
 
-  // Then check social_links array
-  for (const link of socialLinks) {
+  // Check social_links array as fallback
+  for (const link of item.social_links ?? []) {
     if (!instagramHandle && link.includes("instagram.com")) {
       const match = link.match(/instagram\.com\/([^/?#]+)/);
       if (match) instagramHandle = match[1];
     }
-    if (!facebookUrl && link.includes("facebook.com")) {
-      facebookUrl = link;
-    }
+    if (!facebookUrl && link.includes("facebook.com")) facebookUrl = link;
   }
 
-  // Also check the main site field for FB/IG
+  // Check main site field for FB/IG as last resort
   if (!facebookUrl && site.includes("facebook.com")) facebookUrl = site;
   if (!instagramHandle && site.includes("instagram.com")) {
     const match = site.match(/instagram\.com\/([^/?#]+)/);
@@ -166,15 +166,19 @@ interface OutscraperResult {
   address?: string;
   phone?: string;
   site?: string;
+  website?: string;
   rating?: number;
   reviews?: number;
   postal_code?: string;
   type?: string;
-  social_links?: string[];
-  // Alternative field names Outscraper may use
-  website?: string;
-  instagram?: string;
+  // Outscraper enrichment fields (capitalized)
+  Facebook?: string;
+  Instagram?: string;
+  Twitter?: string;
+  Linkedin?: string;
+  Youtube?: string;
+  // Lowercase variants just in case
   facebook?: string;
-  twitter?: string;
-  linkedin?: string;
+  instagram?: string;
+  social_links?: string[];
 }
