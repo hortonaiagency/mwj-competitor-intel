@@ -1,0 +1,24 @@
+{
+  "name": "mwj-competitor-intel",
+  "version": "1.0.0",
+  "description": "Weekly competitor intelligence automation for Move With Jacks LLC",
+  "scripts": {
+    "dev": "npx trigger.dev@latest dev",
+    "deploy": "npx trigger.dev@latest deploy"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@trigger.dev/sdk": "4.4.6",
+    "docx": "^9.7.1",
+    "googleapis": "^173.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
+  }
+}
