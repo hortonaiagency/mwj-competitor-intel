@@ -25,6 +25,7 @@ const MWJ_ALIASES = [
   "bcukportorange",
   "bootcamp uk port orange",
   "bootcamp uk daytona",
+  "386-410-9966",
 ];
 
 export const scrapeGoogleMaps = schemaTask({
@@ -52,7 +53,8 @@ export const scrapeGoogleMaps = schemaTask({
         for (const item of results) {
           const key = `${(item.name ?? "").toLowerCase().trim()}_${item.postal_code ?? ""}`;
           if (seen.has(key)) continue;
-          if (MWJ_ALIASES.some((alias) => (item.name ?? "").toLowerCase().includes(alias))) continue;
+          const nameAndPhone = `${(item.name ?? "").toLowerCase()} ${item.phone ?? ""}`;
+          if (MWJ_ALIASES.some((alias) => nameAndPhone.includes(alias))) continue;
 
           seen.add(key);
           places.push(normalizePlace(item));

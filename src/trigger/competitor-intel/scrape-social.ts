@@ -12,6 +12,7 @@ const MWJ_ALIASES = [
   "bcuk port orange",
   "bootcamp uk port orange",
   "bootcamp uk daytona",
+  "386-410-9966",
 ];
 const FITNESS_KEYWORDS = ["trainer", "coach", "fitness", "bootcamp", "workout", "cpt", "nasm", "issa", "personal training", "strength", "gym"];
 
@@ -93,7 +94,9 @@ export const scrapeSocial = schemaTask({
         const fbData = await runApifyActor(apifyToken, "data-slayer/facebook-search-pages", { query, limit: 10 });
         for (const page of fbData) {
           const url: string = String(page.profileUrl ?? page.url ?? "");
-          if (url && !newFbUrls.includes(url)) newFbUrls.push(url);
+          const pagePhone: string = String(page.phone ?? "");
+          const isShelbyFb = MWJ_ALIASES.some((alias) => url.toLowerCase().includes(alias) || pagePhone.includes(alias));
+          if (url && !newFbUrls.includes(url) && !isShelbyFb) newFbUrls.push(url);
         }
         await wait.for({ seconds: 2 });
       }
@@ -147,7 +150,9 @@ export const scrapeSocial = schemaTask({
       });
       for (const page of fbData) {
         const url: string = String(page.pageUrl ?? page.url ?? "");
-        if (url) {
+        const phone: string = String(page.phone ?? "");
+        const isShelby = MWJ_ALIASES.some((alias) => url.toLowerCase().includes(alias) || phone.includes(alias));
+        if (url && !isShelby) {
           fbPageMap.set(normalizeUrl(url), {
             bio: page.about != null ? String(page.about) : page.description != null ? String(page.description) : null,
             priceRange: page.priceRange != null ? String(page.priceRange) : null,
