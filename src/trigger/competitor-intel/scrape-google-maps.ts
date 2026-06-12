@@ -75,6 +75,7 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   url.searchParams.set("query", query);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("async", "false");
+  url.searchParams.set("fields", "name,full_address,phone,site,rating,reviews,postal_code,type,social_links");
 
   const res = await fetch(url.toString(), {
     headers: { "X-API-KEY": apiKey },
@@ -93,7 +94,12 @@ async function outscraperSearch(apiKey: string, query: string, limit: number): P
   }
 
   const body = await res.json() as { data?: OutscraperResult[][] };
-  return body.data?.flat() ?? [];
+  const results = body.data?.flat() ?? [];
+  if (results.length > 0) {
+    console.log("Outscraper raw sample (first result keys):", JSON.stringify(Object.keys(results[0])));
+    console.log("Outscraper raw sample (first result):", JSON.stringify(results[0]));
+  }
+  return results;
 }
 
 async function pollOutscraperResults(apiKey: string, resultsUrl: string): Promise<OutscraperResult[]> {
@@ -116,15 +122,23 @@ function normalizePlace(item: OutscraperResult): CompetitorPlace {
   let instagramHandle: string | null = null;
   let facebookUrl: string | null = null;
 
-  const site = item.site ?? "";
+  const site = item.site ?? item.website ?? "";
   const socialLinks: string[] = item.social_links ?? [];
 
+  // Check direct social fields first
+  if (item.instagram) {
+    const match = item.instagram.match(/instagram\.com\/([^/?#]+)/);
+    instagramHandle = match ? match[1] : item.instagram.replace(/^@/, "");
+  }
+  if (item.facebook) facebookUrl = item.facebook;
+
+  // Then check social_links array
   for (const link of socialLinks) {
-    if (link.includes("instagram.com")) {
+    if (!instagramHandle && link.includes("instagram.com")) {
       const match = link.match(/instagram\.com\/([^/?#]+)/);
       if (match) instagramHandle = match[1];
     }
-    if (link.includes("facebook.com")) {
+    if (!facebookUrl && link.includes("facebook.com")) {
       facebookUrl = link;
     }
   }
@@ -163,4 +177,10 @@ interface OutscraperResult {
   postal_code?: string;
   type?: string;
   social_links?: string[];
+  // Alternative field names Outscraper may use
+  website?: string;
+  instagram?: string;
+  facebook?: string;
+  twitter?: string;
+  linkedin?: string;
 }
