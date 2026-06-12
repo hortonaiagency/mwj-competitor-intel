@@ -10,8 +10,8 @@ const MWJ_ALIASES = [
   "movwithjacks",
   "bcukportorange",
   "bcuk port orange",
-  "bootcamp uk port orange",
-  "bootcamp uk daytona",
+  "bcukamerica",
+  "bootcamp uk", // catches all name variants, e.g. "Bootcamp UK - Daytona Beach Outdoor Fitness"
   "386-410-9966",
 ];
 const FITNESS_KEYWORDS = ["trainer", "coach", "fitness", "bootcamp", "workout", "cpt", "nasm", "issa", "personal training", "strength", "gym"];
@@ -33,14 +33,80 @@ export const scrapeSocial = schemaTask({
   schema: z.object({
     places: z.array(z.any()),
     scanDepth: z.enum(["demo", "deep", "light"]),
+    // webOnly: run ONLY the free homepage-fetch + Firecrawl-search steps and skip
+    // every Apify call — used for $0-cost testing of social extraction
+    webOnly: z.boolean().optional(),
   }),
   retry: { maxAttempts: 3, minTimeoutInMs: 10000, maxTimeoutInMs: 60000 },
-  run: async ({ places: rawPlaces, scanDepth }) => {
+  run: async ({ places: rawPlaces, scanDepth, webOnly }) => {
     const apifyToken = process.env.APIFY_TOKEN;
     if (!apifyToken) throw new Error("APIFY_TOKEN is not set");
+    const firecrawlKey = process.env.FIRECRAWL_API_KEY;
+    if (!firecrawlKey) throw new Error("FIRECRAWL_API_KEY is not set");
 
     let places = rawPlaces as CompetitorPlace[];
     const seen = new Set(places.map((p) => dedupeKey(p.name, p.postalCode)));
+
+    // Step 0 — Homepage social extraction (free — plain HTTP, no API credits).
+    // Most fitness sites link their IG/FB in the page header/footer, so a direct
+    // fetch of the homepage covers the majority of competitors at zero cost.
+    const sitesToFetch = places.filter((p) => p.website && (!p.instagramHandle || !p.facebookUrl));
+    console.log(`Homepage social extraction: ${sitesToFetch.length} sites to fetch (free)`);
+    let igFromSites = 0;
+    let fbFromSites = 0;
+    for (let i = 0; i < sitesToFetch.length; i += 5) {
+      const batch = sitesToFetch.slice(i, i + 5);
+      await Promise.all(
+        batch.map(async (place) => {
+          const found = await extractSocialsFromSite(
+            place.website!,
+            nameMatchToken(place.name),
+            extractCity(place.address).toLowerCase().replace(/[^a-z0-9]/g, "")
+          );
+          if (found.instagramHandle && !place.instagramHandle && !isMwjValue(found.instagramHandle)) {
+            place.instagramHandle = found.instagramHandle;
+            igFromSites++;
+          }
+          if (found.facebookUrl && !place.facebookUrl && !isMwjValue(found.facebookUrl)) {
+            place.facebookUrl = found.facebookUrl;
+            fbFromSites++;
+          }
+        })
+      );
+    }
+    console.log(`Homepage extraction found: ${igFromSites} Instagram handles, ${fbFromSites} Facebook pages`);
+
+    // Step 0.5 — Firecrawl name-search fallback for competitors with NO socials at
+    // all after Step 0 (no website, or homepage had no social links). One web
+    // search per competitor; costs Firecrawl credits only, never Apify.
+    const noSocials = places.filter((p) => !p.instagramHandle && !p.facebookUrl);
+    const fallbackTargets = noSocials.slice(0, 25); // safety cap per run
+    console.log(`Firecrawl name-search fallback: ${noSocials.length} competitors with no socials (searching ${fallbackTargets.length}, cap 25)`);
+    let fallbackCredits = 0;
+    for (const place of fallbackTargets) {
+      const result = await firecrawlSearchSocials(firecrawlKey, place.name, extractCity(place.address));
+      fallbackCredits += result.creditsUsed;
+      if (result.instagramHandle && !isMwjValue(result.instagramHandle)) place.instagramHandle = result.instagramHandle;
+      if (result.facebookUrl && !isMwjValue(result.facebookUrl)) place.facebookUrl = result.facebookUrl;
+      await wait.for({ seconds: 6 }); // stay under Firecrawl free-tier search rate limit
+    }
+    if (fallbackTargets.length > 0) {
+      console.log(`Firecrawl fallback used ${fallbackCredits} credits total`);
+    }
+
+    if (webOnly) {
+      console.log(`webOnly mode: skipping all Apify discovery/enrichment — returning ${places.length} places`);
+      const webOnlyPlaces: EnrichedCompetitorPlace[] = places.map((p) => ({
+        ...p,
+        instagramFollowers: null,
+        instagramBio: null,
+        instagramRecentCaptions: [],
+        facebookBio: null,
+        facebookPriceRange: null,
+        facebookEmail: null,
+      }));
+      return { places: webOnlyPlaces };
+    }
 
     // Step 1 — Instagram hashtag discovery (skip in light mode)
     const newIgHandles: string[] = [];
@@ -120,7 +186,7 @@ export const scrapeSocial = schemaTask({
     // Step 3 — Instagram profile enrichment
     const igProfileMap = new Map<string, IgProfile>();
     if (uniqueIgHandles.length > 0) {
-      console.log(`IG profile enrichment: ${uniqueIgHandles.length} handles`);
+      console.log(`IG profile enrichment: ${uniqueIgHandles.length} handles (~$${(uniqueIgHandles.length * 0.0026).toFixed(2)} Apify)`);
       const igData = await runApifyActor(apifyToken, "apify/instagram-profile-scraper", {
         usernames: uniqueIgHandles,
       });
@@ -144,7 +210,7 @@ export const scrapeSocial = schemaTask({
     // Step 4 — Facebook page enrichment
     const fbPageMap = new Map<string, FbPage>();
     if (uniqueFbUrls.length > 0) {
-      console.log(`FB page enrichment: ${uniqueFbUrls.length} pages`);
+      console.log(`FB page enrichment: ${uniqueFbUrls.length} pages (~$${(uniqueFbUrls.length * 0.00399).toFixed(2)} Apify)`);
       const fbData = await runApifyActor(apifyToken, "corent1robert/facebook-page-contact-scraper", {
         pageUrls: uniqueFbUrls.map((url) => ({ url })),
       });
@@ -300,6 +366,188 @@ function dedupeKey(name: string, postalCode: string): string {
 
 function normalizeUrl(url: string): string {
   return url.replace(/\/$/, "").toLowerCase();
+}
+
+// ─── Free homepage social extraction ─────────────────────────────────────────
+
+// instagram.com/<x> and facebook.com/<x> paths that are never a business profile
+const IG_RESERVED = new Set([
+  "p", "reel", "reels", "explore", "stories", "accounts", "tv", "sharer", "share",
+  "embed", "developer", "about", "legal", "directory", "static",
+]);
+const FB_RESERVED = new Set([
+  "sharer", "sharer.php", "share", "share.php", "plugins", "dialog", "tr", "login",
+  "events", "groups", "photos", "watch", "hashtag", "profile.php", "policies",
+  "policy", "privacy", "help", "home.php", "people", "marketplace", "reel", "stories",
+]);
+
+function isMwjValue(value: string): boolean {
+  const v = value.toLowerCase();
+  return MWJ_ALIASES.some((alias) => v.includes(alias));
+}
+
+async function extractSocialsFromSite(siteUrl: string, nameToken: string, cityToken: string): Promise<FoundSocials> {
+  const none: FoundSocials = { instagramHandle: null, facebookUrl: null };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    const res = await fetch(siteUrl, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return none;
+    const html = await res.text();
+    return extractSocialsFromHtml(html, nameToken, cityToken);
+  } catch {
+    // Timeouts, DNS failures, SSL errors — site just gets skipped; the Firecrawl
+    // fallback step picks these competitors up if no socials were found elsewhere
+    return none;
+  }
+}
+
+function extractSocialsFromHtml(html: string, nameToken = "", cityToken = ""): FoundSocials {
+  // Sites often embed links JSON-escaped inside scripts (https:\/\/www...) —
+  // unescape so one regex pass catches both forms. Anchoring on the protocol
+  // (//) blocks substring hits like cdninstagram.com.
+  const text = html.replace(/\\\//g, "/");
+
+  const igCandidates: string[] = [];
+  for (const m of text.matchAll(/(?:https?:)?\/\/(?:www\.|m\.)?instagram\.com\/([A-Za-z0-9_.]{2,30})/gi)) {
+    const handle = m[1].replace(/\.+$/, "");
+    if (handle.length < 3) continue; // 1-2 char handles are template junk in practice
+    if (IG_RESERVED.has(handle.toLowerCase())) continue;
+    if (!igCandidates.includes(handle)) igCandidates.push(handle);
+    if (igCandidates.length >= 10) break;
+  }
+
+  // Matches both vanity URLs (facebook.com/MyGym) and legacy page URLs
+  // (facebook.com/pages/My-Gym/12345)
+  const fbCandidates: string[] = [];
+  for (const m of text.matchAll(/(?:https?:)?\/\/(?:www\.|m\.)?facebook\.com\/(pages\/[A-Za-z0-9.\-_%]+\/\d+|[A-Za-z0-9.\-]{3,75})/gi)) {
+    const path = m[1].replace(/\/+$/, "");
+    const first = path.split("/")[0].toLowerCase();
+    if (first !== "pages" && FB_RESERVED.has(first)) continue;
+    // Real numeric page IDs are 15+ digits; short ones (facebook.com/2008) are
+    // template/footer junk
+    if (/^\d{1,9}$/.test(path)) continue;
+    if (!fbCandidates.includes(path)) fbCandidates.push(path);
+    if (fbCandidates.length >= 10) break;
+  }
+
+  // Prefer the candidate that mentions the city (right location for franchises),
+  // then the business name, then fall back to first found
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const pick = (candidates: string[]): string | null => {
+    if (candidates.length === 0) return null;
+    if (cityToken) {
+      const c = candidates.find((x) => squash(x).includes(cityToken));
+      if (c) return c;
+    }
+    if (nameToken) {
+      const c = candidates.find((x) => squash(x).includes(nameToken));
+      if (c) return c;
+    }
+    return candidates[0];
+  };
+
+  const fbPick = pick(fbCandidates);
+  return {
+    instagramHandle: pick(igCandidates),
+    facebookUrl: fbPick ? `https://www.facebook.com/${fbPick}` : null,
+  };
+}
+
+// ─── Firecrawl name-search fallback ──────────────────────────────────────────
+
+// Words too generic to identify a specific business in a match guard
+const GENERIC_NAME_WORDS = new Set([
+  "fitness", "training", "trainer", "personal", "gym", "studio", "health", "club",
+  "center", "centre", "wellness", "crossfit", "bootcamp", "performance", "athletics",
+  "athletic", "strength", "coaching", "body", "beach", "port", "orange", "daytona",
+]);
+
+async function firecrawlSearchSocials(
+  apiKey: string,
+  name: string,
+  city: string
+): Promise<FoundSocials & { creditsUsed: number }> {
+  const none = { instagramHandle: null, facebookUrl: null, creditsUsed: 0 };
+
+  const query = `"${name}" ${city} FL instagram facebook`.replace(/\s+/g, " ").trim();
+  let res = await fetch("https://api.firecrawl.dev/v2/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ query, limit: 5 }),
+  });
+
+  if (res.status === 429) {
+    await wait.for({ seconds: 30 });
+    res = await fetch("https://api.firecrawl.dev/v2/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ query, limit: 5 }),
+    });
+  }
+
+  if (!res.ok) {
+    console.warn(`Firecrawl search failed for "${name}": ${res.status}`);
+    return none;
+  }
+
+  const body = await res.json() as {
+    data?: Array<{ url?: string; title?: string }> | { web?: Array<{ url?: string; title?: string }> };
+    creditsUsed?: number;
+  };
+  const results = Array.isArray(body.data) ? body.data : body.data?.web ?? [];
+  const creditsUsed = typeof body.creditsUsed === "number" ? body.creditsUsed : 0;
+
+  // Match guard: a result only counts if it contains a distinctive word from the
+  // business name — prevents grabbing some other gym's profile
+  const token = nameMatchToken(name);
+  let instagramHandle: string | null = null;
+  let facebookUrl: string | null = null;
+
+  for (const result of results) {
+    const url = String(result.url ?? "");
+    const title = String(result.title ?? "");
+    const haystack = (url + " " + title).toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (token && !haystack.includes(token)) continue;
+
+    if (!instagramHandle || !facebookUrl) {
+      const found = extractSocialsFromHtml(url);
+      if (found.instagramHandle && !instagramHandle) instagramHandle = found.instagramHandle;
+      if (found.facebookUrl && !facebookUrl) facebookUrl = found.facebookUrl;
+    }
+  }
+
+  return { instagramHandle, facebookUrl, creditsUsed };
+}
+
+function nameMatchToken(name: string): string {
+  const words = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w));
+  // Fall back to the full squashed name when every word is generic
+  return words[0] ?? name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function extractCity(address: string): string {
+  // "1672 Dunlawton Ave, Port Orange, FL 32127" → "Port Orange"
+  const parts = address.split(",").map((s) => s.trim());
+  const flIdx = parts.findIndex((p) => /\bFL\b/i.test(p));
+  return flIdx > 0 ? parts[flIdx - 1] : "";
+}
+
+interface FoundSocials {
+  instagramHandle: string | null;
+  facebookUrl: string | null;
 }
 
 interface IgProfile {

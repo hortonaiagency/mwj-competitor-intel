@@ -23,8 +23,8 @@ const MWJ_ALIASES = [
   "move with jacks",
   "bcuk port orange",
   "bcukportorange",
-  "bootcamp uk port orange",
-  "bootcamp uk daytona",
+  "bcukamerica",
+  "bootcamp uk", // catches all name variants, e.g. "Bootcamp UK - Daytona Beach Outdoor Fitness"
   "386-410-9966",
 ];
 

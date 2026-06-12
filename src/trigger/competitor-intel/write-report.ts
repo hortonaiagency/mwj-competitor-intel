@@ -105,15 +105,28 @@ async function upsertSheet(
 
   for (const place of places) {
     if (place.changeStatus === "unchanged") {
-      // Just touch Last Seen column (B)
+      // Touch Last Seen (B) and backfill Website/Instagram/Facebook cells that are
+      // empty in the sheet but populated in this run's data — keeps the registry
+      // catching up as scraping improves, without a full-row rewrite
       const key = `${place.name.toLowerCase()}_${place.postalCode}`;
       const rowNum = rowIndex.get(key);
       if (rowNum) {
-        await sheets.spreadsheets.values.update({
+        const existingRow = rows[rowNum - 1] ?? [];
+        const data: Array<{ range: string; values: string[][] }> = [
+          { range: `Competitor Registry!B${rowNum}`, values: [[runDate]] },
+        ];
+        if (!String(existingRow[5] ?? "").trim() && place.website) {
+          data.push({ range: `Competitor Registry!F${rowNum}`, values: [[place.website]] });
+        }
+        if (!String(existingRow[6] ?? "").trim() && place.instagramHandle) {
+          data.push({ range: `Competitor Registry!G${rowNum}`, values: [[place.instagramHandle]] });
+        }
+        if (!String(existingRow[7] ?? "").trim() && place.facebookUrl) {
+          data.push({ range: `Competitor Registry!H${rowNum}`, values: [[place.facebookUrl]] });
+        }
+        await sheets.spreadsheets.values.batchUpdate({
           spreadsheetId,
-          range: `Competitor Registry!B${rowNum}`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: { values: [[runDate]] },
+          requestBody: { valueInputOption: "USER_ENTERED", data },
         });
       }
       continue;
