@@ -3,6 +3,16 @@ import { z } from "zod";
 import type { CompetitorPlace, EnrichedCompetitorPlace, ScanDepth } from "./types.js";
 
 const LOCAL_KEYWORDS = ["port orange", "daytona", "ormond", "deland", "new smyrna", "volusia", "deltona", "holly hill"];
+
+// All known handles/names for Shelby's business — filter these out everywhere
+const MWJ_ALIASES = [
+  "move with jacks",
+  "movwithjacks",
+  "bcukportorange",
+  "bcuk port orange",
+  "bootcamp uk port orange",
+  "bootcamp uk daytona",
+];
 const FITNESS_KEYWORDS = ["trainer", "coach", "fitness", "bootcamp", "workout", "cpt", "nasm", "issa", "personal training", "strength", "gym"];
 
 const IG_HASHTAGS_FULL = [
@@ -54,8 +64,9 @@ export const scrapeSocial = schemaTask({
 
         const isFitness = FITNESS_KEYWORDS.some((k) => combined.includes(k));
         const isLocal = LOCAL_KEYWORDS.some((k) => combined.includes(k));
+        const isShelby = MWJ_ALIASES.some((alias) => username.toLowerCase().includes(alias) || combined.includes(alias));
 
-        if (isFitness && isLocal) {
+        if (isFitness && isLocal && !isShelby) {
           discoveredHandles.add(username);
           newIgHandles.push(username);
         }

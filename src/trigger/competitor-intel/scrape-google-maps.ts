@@ -18,6 +18,15 @@ const CATEGORIES = ["gym", "bootcamp", "fitness studio", "personal trainer", "Cr
 
 const LIMITS: Record<ScanDepth, number> = { demo: 10, deep: 25, light: 10 };
 
+// All known names/handles for Shelby's business — old branding included
+const MWJ_ALIASES = [
+  "move with jacks",
+  "bcuk port orange",
+  "bcukportorange",
+  "bootcamp uk port orange",
+  "bootcamp uk daytona",
+];
+
 export const scrapeGoogleMaps = schemaTask({
   id: "scrape-google-maps",
   schema: z.object({
@@ -43,7 +52,7 @@ export const scrapeGoogleMaps = schemaTask({
         for (const item of results) {
           const key = `${(item.name ?? "").toLowerCase().trim()}_${item.postal_code ?? ""}`;
           if (seen.has(key)) continue;
-          if ((item.name ?? "").toLowerCase().includes("move with jacks")) continue;
+          if (MWJ_ALIASES.some((alias) => (item.name ?? "").toLowerCase().includes(alias))) continue;
 
           seen.add(key);
           places.push(normalizePlace(item));
