@@ -1,4 +1,4 @@
-import { schedules } from "@trigger.dev/sdk";
+import { task } from "@trigger.dev/sdk";
 import { google } from "googleapis";
 import type { ScanDepth, RunCounts } from "./types.js";
 import { scrapeGoogleMaps } from "./scrape-google-maps.js";
@@ -9,13 +9,11 @@ import { verifyClosure } from "./verify-closure.js";
 import { analyzeCompetitors } from "./analyze-competitors.js";
 import { writeReport } from "./write-report.js";
 
-// Monday 8:00 AM Eastern, true year-round (handles EST/EDT automatically)
-export const checkCompetitors = schedules.task({
+// Schedule removed — trigger manually from the dashboard until ready for production.
+// To re-enable: change `task` back to `schedules.task` and restore the cron block:
+//   cron: { pattern: "0 8 * * 1", timezone: "America/New_York" }
+export const checkCompetitors = task({
   id: "check-competitors",
-  cron: {
-    pattern: "0 8 * * 1",
-    timezone: "America/New_York",
-  },
   run: async () => {
     // Kill switch: scheduled runs do nothing (and cost nothing) unless
     // AUTOMATION_ENABLED=true is set in the environment. Flip it in the
